@@ -4,12 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Code Scratchpad</title>
-    <!-- Import CSS Xterm bawaan -->
-    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <!-- Top Navigation / Toolbar -->
     <header id="toolbar">
       <div class="toolbar-left">
         <select id="lang-select">
@@ -18,35 +16,40 @@
           <option value="java">Java</option>
         </select>
         <button id="btn-run" class="btn primary">▶ Run (Ctrl+Enter)</button>
+        <button
+          id="btn-clear"
+          class="btn secondary"
+          title="Clear Terminal Output"
+        >
+          ⊘ Clear
+        </button>
       </div>
 
       <div class="toolbar-right">
+        <label class="toggle-label">
+          <input type="checkbox" id="check-vim" />
+          <span>Vim Mode</span>
+        </label>
         <button
           id="btn-toggle-layout"
           class="btn secondary"
-          title="Ganti Orientasi (Kiri-Kanan / Atas-Bawah)"
+          title="Toggle Layout"
         >
           ◫ Toggle Layout
         </button>
         <button
           id="btn-toggle-terminal"
           class="btn secondary"
-          title="Sembunyikan/Tampilkan Terminal"
+          title="Toggle Terminal"
         >
           ▤ Terminal
         </button>
       </div>
     </header>
 
-    <!-- Main Workspace Container -->
     <main id="workspace" class="layout-horizontal">
-      <!-- Panel Kiri: CodeMirror Editor -->
       <section id="editor-container"></section>
-
-      <!-- Resizable Divider Handle -->
       <div id="divider"></div>
-
-      <!-- Panel Kanan: Xterm.js Terminal -->
       <section id="terminal-container"></section>
     </main>
 

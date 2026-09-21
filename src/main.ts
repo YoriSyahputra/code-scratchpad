@@ -4,6 +4,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { python } from "@codemirror/lang-python";
 import { cpp } from "@codemirror/lang-cpp";
 import { java } from "@codemirror/lang-java";
+import { vim } from "@replit/codemirror-vim";
 
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -29,6 +30,7 @@ interface LayoutState {
   splitRatio: number;
   isTerminalVisible: boolean;
   isDragging: boolean;
+  isRunning: boolean;
 }
 
 const SNIPPETS: Record<string, string> = {
@@ -40,18 +42,14 @@ const SNIPPETS: Record<string, string> = {
 const elements = {
   workspace: document.getElementById("workspace") as HTMLElement,
   editorContainer: document.getElementById("editor-container") as HTMLElement,
-  terminalContainer: document.getElementById(
-    "terminal-container",
-  ) as HTMLElement,
+  terminalContainer: document.getElementById("terminal-container") as HTMLElement,
   divider: document.getElementById("divider") as HTMLElement,
   langSelect: document.getElementById("lang-select") as HTMLSelectElement,
-  btnToggleLayout: document.getElementById(
-    "btn-toggle-layout",
-  ) as HTMLButtonElement,
-  btnToggleTerminal: document.getElementById(
-    "btn-toggle-terminal",
-  ) as HTMLButtonElement,
+  btnToggleLayout: document.getElementById("btn-toggle-layout") as HTMLButtonElement,
+  btnToggleTerminal: document.getElementById("btn-toggle-terminal") as HTMLButtonElement,
   btnRun: document.getElementById("btn-run") as HTMLButtonElement,
+  btnClear: document.getElementById("btn-clear") as HTMLButtonElement,
+  checkVim: document.getElementById("check-vim") as HTMLInputElement,
 };
 
 const layoutState: LayoutState = {
@@ -59,9 +57,11 @@ const layoutState: LayoutState = {
   splitRatio: 0.6,
   isTerminalVisible: true,
   isDragging: false,
+  isRunning: false,
 };
 
 const languageCompartment = new Compartment();
+const vimCompartment = new Compartment();
 
 function getLanguageExtension(lang: string) {
   switch (lang) {
@@ -78,7 +78,12 @@ function initializeEditor(): EditorView {
   return new EditorView({
     state: EditorState.create({
       doc: SNIPPETS.python,
-      extensions: [basicSetup, oneDark, languageCompartment.of(python())],
+      extensions: [
+        basicSetup,
+        oneDark,
+        languageCompartment.of(python()),
+        vimCompartment.of([]),
+      ],
     }),
     parent: elements.editorContainer,
   });
@@ -89,10 +94,12 @@ function initializeTerminal(): { term: Terminal; fitAddon: FitAddon } {
     theme: {
       background: "#141414",
       foreground: "#d4d4d4",
-      cursor: "#ffffff",
+      cursor: "#528bff",
+      selectionBackground: "#3e4451",
     },
-    fontFamily: "monospace",
+    fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
     fontSize: 13,
+    lineHeight: 1.25,
     cursorBlink: true,
   });
 
@@ -151,6 +158,19 @@ function updateDimensions(fitAddon: FitAddon, term?: Terminal): void {
   });
 }
 
+function setRunningState(running: boolean): void {
+  layoutState.isRunning = running;
+  if (running) {
+    elements.btnRun.textContent = "⏹ Stop (Ctrl+C)";
+    elements.btnRun.classList.remove("primary");
+    elements.btnRun.classList.add("running");
+  } else {
+    elements.btnRun.textContent = "▶ Run (Ctrl+Enter)";
+    elements.btnRun.classList.remove("running");
+    elements.btnRun.classList.add("primary");
+  }
+}
+
 function switchLanguage(editor: EditorView, targetLanguage: string): void {
   editor.dispatch({
     effects: languageCompartment.reconfigure(
@@ -182,22 +202,38 @@ async function verifyToolchains(term: Terminal): Promise<void> {
   }
 }
 
+async function stopProcess(term: Terminal): Promise<void> {
+  try {
+    await invoke("kill_process");
+    setRunningState(false);
+    term.writeln("\r\n\x1b[31m[Process terminated by user]\x1b[0m\r\n");
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 async function executeCode(
   editor: EditorView,
   term: Terminal,
   fitAddon: FitAddon,
 ): Promise<void> {
+  if (layoutState.isRunning) {
+    await stopProcess(term);
+    return;
+  }
+
   if (!layoutState.isTerminalVisible) {
     layoutState.isTerminalVisible = true;
     updateDimensions(fitAddon, term);
   }
 
+  term.clear();
+
   const code = editor.state.doc.toString();
   const language = elements.langSelect.value;
 
-  term.writeln(
-    `\r\n\x1b[33m[Launching ${language.toUpperCase()}...]\x1b[0m\r\n`,
-  );
+  setRunningState(true);
+  term.writeln(`\x1b[33m[Launching ${language.toUpperCase()}...]\x1b[0m\r\n`);
 
   try {
     await invoke("run_code", {
@@ -209,6 +245,7 @@ async function executeCode(
       },
     });
   } catch (err) {
+    setRunningState(false);
     term.writeln(`\r\n\x1b[31m[Execution Error]: ${err}\x1b[0m\r\n`);
   }
 }
@@ -219,10 +256,15 @@ function attachTerminalStreams(term: Terminal): void {
   });
 
   listen("pty-exit", () => {
+    setRunningState(false);
     term.writeln("\r\n\x1b[90m[Process finished]\x1b[0m\r\n");
   });
 
   term.onData((data) => {
+    if (data === "\x03" && layoutState.isRunning) {
+      stopProcess(term);
+      return;
+    }
     invoke("pty_write", { data }).catch(console.error);
   });
 }
@@ -247,6 +289,16 @@ function bindEventListeners(
   elements.btnToggleTerminal.addEventListener("click", () => {
     layoutState.isTerminalVisible = !layoutState.isTerminalVisible;
     updateDimensions(fitAddon, term);
+  });
+
+  elements.btnClear.addEventListener("click", () => {
+    term.clear();
+  });
+
+  elements.checkVim.addEventListener("change", () => {
+    editor.dispatch({
+      effects: vimCompartment.reconfigure(elements.checkVim.checked ? vim() : []),
+    });
   });
 
   elements.btnRun.addEventListener("click", () => {

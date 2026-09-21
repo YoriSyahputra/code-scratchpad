@@ -2,6 +2,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtyPair, PtySiz
 use serde::Deserialize;
 use std::fs;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -13,6 +14,7 @@ pub struct AppState {
     pub pty_master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     pub pty_writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
     pub child_killer: Arc<Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>>,
+    pub active_temp_dir: Arc<Mutex<Option<PathBuf>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +56,11 @@ pub fn kill_process(state: tauri::State<'_, AppState>) -> Result<(), String> {
     }
     *state.pty_writer.lock().unwrap() = None;
     *state.pty_master.lock().unwrap() = None;
+
+    if let Some(path) = state.active_temp_dir.lock().unwrap().take() {
+        let _ = fs::remove_dir_all(path);
+    }
+
     Ok(())
 }
 
@@ -69,6 +76,8 @@ pub async fn run_code(
         .prefix("scratchpad_")
         .tempdir()
         .map_err(|e| e.to_string())?;
+
+    let temp_path = temp_dir.path().to_path_buf();
 
     let pty_system = native_pty_system();
     let pair: PtyPair = pty_system
@@ -101,24 +110,24 @@ pub async fn run_code(
 
     let cmd_builder = match payload.language.as_str() {
         "python" => {
-            let file_path = temp_dir.path().join("main.py");
+            let file_path = temp_path.join("main.py");
             fs::write(&file_path, &payload.code).map_err(|e| e.to_string())?;
 
             let binary = if cfg!(target_os = "windows") { "python" } else { "python3" };
             let mut cmd = CommandBuilder::new(binary);
             cmd.arg("-u");
             cmd.arg(&file_path);
-            cmd.cwd(temp_dir.path());
+            cmd.cwd(&temp_path);
             cmd
         }
         "c" => {
-            let file_path = temp_dir.path().join("main.c");
+            let file_path = temp_path.join("main.c");
             fs::write(&file_path, &payload.code).map_err(|e| e.to_string())?;
 
             let binary_out = if cfg!(target_os = "windows") {
-                temp_dir.path().join("app.exe")
+                temp_path.join("app.exe")
             } else {
-                temp_dir.path().join("app")
+                temp_path.join("app")
             };
 
             let _ = app.emit("pty-output", "\r\n\x1b[33m[Compiling with GCC...]\x1b[0m\r\n");
@@ -140,7 +149,7 @@ pub async fn run_code(
             }
 
             let mut cmd = CommandBuilder::new(&binary_out);
-            cmd.cwd(temp_dir.path());
+            cmd.cwd(&temp_path);
             cmd
         }
         "java" => {
@@ -152,12 +161,12 @@ pub async fn run_code(
                 .unwrap_or("Main");
 
             let file_name = format!("{}.java", class_name);
-            let file_path = temp_dir.path().join(&file_name);
+            let file_path = temp_path.join(&file_name);
             fs::write(&file_path, &payload.code).map_err(|e| e.to_string())?;
 
             let mut cmd = CommandBuilder::new("java");
             cmd.arg(&file_name);
-            cmd.cwd(temp_dir.path());
+            cmd.cwd(&temp_path);
             cmd
         }
         _ => return Err("Unsupported language".into()),
@@ -166,7 +175,8 @@ pub async fn run_code(
     let child = pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
     *state.child_killer.lock().unwrap() = Some(child);
 
-    let _ = temp_dir.keep();
+    let kept_path = temp_dir.keep();
+    *state.active_temp_dir.lock().unwrap() = Some(kept_path);
 
     Ok(())
 }
