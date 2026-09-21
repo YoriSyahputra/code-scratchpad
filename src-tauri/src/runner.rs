@@ -137,6 +137,7 @@ pub async fn run_code(
                 .env_remove("LD_LIBRARY_PATH")
                 .arg(&file_path)
                 .arg("-O2")
+                .arg("-lm")
                 .arg("-o")
                 .arg(&binary_out)
                 .output()
