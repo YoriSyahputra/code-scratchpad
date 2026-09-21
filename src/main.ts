@@ -12,17 +12,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-interface LanguageStatus {
-  language: string;
-  is_available: boolean;
-  version?: string;
-  binary_path?: string;
-}
-
 interface SystemToolchainStatus {
-  c: LanguageStatus;
-  python: LanguageStatus;
-  java: LanguageStatus;
+  c: { is_available: boolean; version?: string };
+  python: { is_available: boolean; version?: string };
+  java: { is_available: boolean; version?: string };
 }
 
 interface LayoutState {
@@ -36,25 +29,35 @@ interface LayoutState {
 const SNIPPETS: Record<string, string> = {
   python: `# Scratchpad Python\ndef main():\n    name = input("Enter your name: ")\n    print(f"Hello, {name}!")\n\nmain()`,
   c: `// Scratchpad C\n#include <stdio.h>\n\nint main() {\n    printf("Hello from C!\\n");\n    return 0;\n}`,
-  java: `// Scratchpad Java\nimport java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java!");\n    }\n}`,
+  java: `// Scratchpad Java\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java!");\n    }\n}`,
 };
 
 const elements = {
   workspace: document.getElementById("workspace") as HTMLElement,
   editorContainer: document.getElementById("editor-container") as HTMLElement,
-  terminalContainer: document.getElementById("terminal-container") as HTMLElement,
+  terminalWrapper: document.getElementById("terminal-wrapper") as HTMLElement,
+  terminalContainer: document.getElementById(
+    "terminal-container",
+  ) as HTMLElement,
   divider: document.getElementById("divider") as HTMLElement,
   langSelect: document.getElementById("lang-select") as HTMLSelectElement,
-  btnToggleLayout: document.getElementById("btn-toggle-layout") as HTMLButtonElement,
-  btnToggleTerminal: document.getElementById("btn-toggle-terminal") as HTMLButtonElement,
+  btnToggleLayout: document.getElementById(
+    "btn-toggle-layout",
+  ) as HTMLButtonElement,
+  btnToggleTerminal: document.getElementById(
+    "btn-toggle-terminal",
+  ) as HTMLButtonElement,
   btnRun: document.getElementById("btn-run") as HTMLButtonElement,
   btnClear: document.getElementById("btn-clear") as HTMLButtonElement,
   checkVim: document.getElementById("check-vim") as HTMLInputElement,
+  statusDot: document.getElementById("status-dot") as HTMLElement,
+  editorPos: document.getElementById("editor-pos") as HTMLElement,
+  statusLang: document.getElementById("status-lang") as HTMLElement,
 };
 
 const layoutState: LayoutState = {
   isVertical: false,
-  splitRatio: 0.6,
+  splitRatio: 0.55,
   isTerminalVisible: true,
   isDragging: false,
   isRunning: false,
@@ -74,8 +77,15 @@ function getLanguageExtension(lang: string) {
   }
 }
 
+function updateCursorPosition(editor: EditorView) {
+  const pos = editor.state.selection.main.head;
+  const line = editor.state.doc.lineAt(pos);
+  const col = pos - line.from + 1;
+  elements.editorPos.textContent = `Ln ${line.number}, Col ${col}`;
+}
+
 function initializeEditor(): EditorView {
-  return new EditorView({
+  const editor = new EditorView({
     state: EditorState.create({
       doc: SNIPPETS.python,
       extensions: [
@@ -83,21 +93,27 @@ function initializeEditor(): EditorView {
         oneDark,
         languageCompartment.of(python()),
         vimCompartment.of([]),
+        EditorView.updateListener.of((update) => {
+          if (update.selectionSet || update.docChanged) {
+            updateCursorPosition(editor);
+          }
+        }),
       ],
     }),
     parent: elements.editorContainer,
   });
+  return editor;
 }
 
 function initializeTerminal(): { term: Terminal; fitAddon: FitAddon } {
   const term = new Terminal({
     theme: {
-      background: "#141414",
+      background: "#0a0b0d",
       foreground: "#d4d4d4",
-      cursor: "#528bff",
-      selectionBackground: "#3e4451",
+      cursor: "#3b82f6",
+      selectionBackground: "#1e293b",
     },
-    fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
+    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     fontSize: 13,
     lineHeight: 1.25,
     cursorBlink: true,
@@ -106,68 +122,64 @@ function initializeTerminal(): { term: Terminal; fitAddon: FitAddon } {
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
   term.open(elements.terminalContainer);
-  fitAddon.fit();
-
-  term.writeln("\x1b[36m=== Code Scratchpad Ready ===\x1b[0m");
-  term.writeln('Click "Run" or press Ctrl+Enter to execute.\r\n');
 
   return { term, fitAddon };
 }
 
 function syncPtySize(term: Terminal): void {
   if (term.rows > 0 && term.cols > 0) {
-    invoke("pty_resize", {
-      rows: term.rows,
-      cols: term.cols,
-    }).catch(() => {});
+    invoke("pty_resize", { rows: term.rows, cols: term.cols }).catch(() => {});
   }
 }
 
 function updateDimensions(fitAddon: FitAddon, term?: Terminal): void {
   const { isTerminalVisible, isVertical, splitRatio } = layoutState;
-  const { editorContainer, terminalContainer, divider } = elements;
+  const { editorContainer, terminalWrapper, divider } = elements;
 
   if (!isTerminalVisible) {
     editorContainer.style.width = "100%";
     editorContainer.style.height = "100%";
-    terminalContainer.style.display = "none";
+    terminalWrapper.style.display = "none";
     divider.style.display = "none";
     return;
   }
 
-  terminalContainer.style.display = "block";
+  terminalWrapper.style.display = "flex";
   divider.style.display = "block";
 
   if (isVertical) {
     editorContainer.style.width = "100%";
-    terminalContainer.style.width = "100%";
     editorContainer.style.height = `${splitRatio * 100}%`;
-    terminalContainer.style.height = `${(1 - splitRatio) * 100}%`;
+    terminalWrapper.style.width = "100%";
+    terminalWrapper.style.height = "";
   } else {
     editorContainer.style.height = "100%";
-    terminalContainer.style.height = "100%";
     editorContainer.style.width = `${splitRatio * 100}%`;
-    terminalContainer.style.width = `${(1 - splitRatio) * 100}%`;
+    terminalWrapper.style.height = "100%";
+    terminalWrapper.style.width = "";
   }
 
   requestAnimationFrame(() => {
     fitAddon.fit();
-    if (term) {
-      syncPtySize(term);
-    }
+    if (term) syncPtySize(term);
   });
 }
 
 function setRunningState(running: boolean): void {
   layoutState.isRunning = running;
+  const label = elements.btnRun.querySelector(".btn-label");
+  const icon = elements.btnRun.querySelector(".btn-icon");
+
   if (running) {
-    elements.btnRun.textContent = "⏹ Stop (Ctrl+C)";
-    elements.btnRun.classList.remove("primary");
+    if (label) label.textContent = "Stop";
+    if (icon) icon.textContent = "⏹";
     elements.btnRun.classList.add("running");
+    elements.statusDot.className = "dot running";
   } else {
-    elements.btnRun.textContent = "▶ Run (Ctrl+Enter)";
+    if (label) label.textContent = "Run";
+    if (icon) icon.textContent = "▶";
     elements.btnRun.classList.remove("running");
-    elements.btnRun.classList.add("primary");
+    elements.statusDot.className = "dot idle";
   }
 }
 
@@ -182,6 +194,8 @@ function switchLanguage(editor: EditorView, targetLanguage: string): void {
       insert: SNIPPETS[targetLanguage] || "",
     },
   });
+  elements.statusLang.textContent =
+    targetLanguage.charAt(0).toUpperCase() + targetLanguage.slice(1);
 }
 
 async function verifyToolchains(term: Terminal): Promise<void> {
@@ -228,7 +242,6 @@ async function executeCode(
   }
 
   term.clear();
-
   const code = editor.state.doc.toString();
   const language = elements.langSelect.value;
 
@@ -251,10 +264,7 @@ async function executeCode(
 }
 
 function attachTerminalStreams(term: Terminal): void {
-  listen<string>("pty-output", (event) => {
-    term.write(event.payload);
-  });
-
+  listen<string>("pty-output", (event) => term.write(event.payload));
   listen("pty-exit", () => {
     setRunningState(false);
     term.writeln("\r\n\x1b[90m[Process finished]\x1b[0m\r\n");
@@ -274,9 +284,9 @@ function bindEventListeners(
   term: Terminal,
   fitAddon: FitAddon,
 ): void {
-  elements.langSelect.addEventListener("change", () => {
-    switchLanguage(editor, elements.langSelect.value);
-  });
+  elements.langSelect.addEventListener("change", () =>
+    switchLanguage(editor, elements.langSelect.value),
+  );
 
   elements.btnToggleLayout.addEventListener("click", () => {
     layoutState.isVertical = !layoutState.isVertical;
@@ -291,19 +301,19 @@ function bindEventListeners(
     updateDimensions(fitAddon, term);
   });
 
-  elements.btnClear.addEventListener("click", () => {
-    term.clear();
-  });
+  elements.btnClear.addEventListener("click", () => term.clear());
 
   elements.checkVim.addEventListener("change", () => {
     editor.dispatch({
-      effects: vimCompartment.reconfigure(elements.checkVim.checked ? vim() : []),
+      effects: vimCompartment.reconfigure(
+        elements.checkVim.checked ? vim() : [],
+      ),
     });
   });
 
-  elements.btnRun.addEventListener("click", () => {
-    executeCode(editor, term, fitAddon);
-  });
+  elements.btnRun.addEventListener("click", () =>
+    executeCode(editor, term, fitAddon),
+  );
 
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -321,13 +331,12 @@ function bindEventListeners(
 
   window.addEventListener("mousemove", (e: MouseEvent) => {
     if (!layoutState.isDragging) return;
-
     const rect = elements.workspace.getBoundingClientRect();
     const ratio = layoutState.isVertical
       ? (e.clientY - rect.top) / rect.height
       : (e.clientX - rect.left) / rect.width;
 
-    if (ratio >= 0.15 && ratio <= 0.85) {
+    if (ratio >= 0.2 && ratio <= 0.8) {
       layoutState.splitRatio = ratio;
       updateDimensions(fitAddon, term);
     }
@@ -342,19 +351,26 @@ function bindEventListeners(
     syncPtySize(term);
   });
 
-  window.addEventListener("resize", () => {
-    updateDimensions(fitAddon, term);
-  });
+  window.addEventListener("resize", () => updateDimensions(fitAddon, term));
 }
 
 function bootstrap(): void {
   const editor = initializeEditor();
   const { term, fitAddon } = initializeTerminal();
 
+  // 1. Terapkan dimensi CSS terlebih dahulu
   updateDimensions(fitAddon, term);
   attachTerminalStreams(term);
   bindEventListeners(editor, term, fitAddon);
-  verifyToolchains(term);
+
+  // 2. Beri jeda 50ms agar DOM selesai render dan FitAddon membaca ukuran kontainer asli
+  setTimeout(() => {
+    fitAddon.fit();
+    syncPtySize(term);
+    term.writeln("\x1b[36m=== Code Scratchpad Ready ===\x1b[0m");
+    term.writeln('Click "Run" or press Ctrl+Enter to execute.\r\n');
+    verifyToolchains(term);
+  }, 50);
 }
 
 bootstrap();

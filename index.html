@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -8,50 +8,74 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
+    <!-- Top Modern Toolbar -->
     <header id="toolbar">
-      <div class="toolbar-left">
-        <select id="lang-select">
-          <option value="python">Python</option>
-          <option value="c">C</option>
-          <option value="java">Java</option>
-        </select>
-        <button id="btn-run" class="btn primary">▶ Run (Ctrl+Enter)</button>
-        <button
-          id="btn-clear"
-          class="btn secondary"
-          title="Clear Terminal Output"
-        >
-          ⊘ Clear
+      <div class="toolbar-group">
+        <div class="select-wrapper">
+          <select id="lang-select">
+            <option value="python">🐍 Python 3</option>
+            <option value="c">⚡ C (GCC)</option>
+            <option value="java">☕ Java</option>
+          </select>
+        </div>
+
+        <button id="btn-run" class="btn btn-primary" title="Execute Code (Ctrl+Enter)">
+          <span class="btn-icon">▶</span>
+          <span class="btn-label">Run</span>
+          <kbd class="shortcut-badge">Ctrl+↵</kbd>
+        </button>
+
+        <button id="btn-clear" class="btn btn-ghost" title="Clear Terminal Output">
+          <span>⊘</span>
+          <span>Clear</span>
         </button>
       </div>
 
-      <div class="toolbar-right">
-        <label class="toggle-label">
+      <div class="toolbar-group">
+        <label class="toggle-pill" title="Toggle Vim Navigation Keybindings">
           <input type="checkbox" id="check-vim" />
-          <span>Vim Mode</span>
+          <span class="pill-slider"></span>
+          <span class="pill-label">VIM</span>
         </label>
-        <button
-          id="btn-toggle-layout"
-          class="btn secondary"
-          title="Toggle Layout"
-        >
-          ◫ Toggle Layout
+
+        <div class="divider-vertical"></div>
+
+        <button id="btn-toggle-layout" class="btn btn-icon-only" title="Toggle Split Orientation">
+          ◫
         </button>
-        <button
-          id="btn-toggle-terminal"
-          class="btn secondary"
-          title="Toggle Terminal"
-        >
-          ▤ Terminal
+        <button id="btn-toggle-terminal" class="btn btn-icon-only" title="Toggle Terminal Visibility">
+          ▤
         </button>
       </div>
     </header>
 
+    <!-- Split Pane Workspace -->
     <main id="workspace" class="layout-horizontal">
       <section id="editor-container"></section>
       <div id="divider"></div>
-      <section id="terminal-container"></section>
+      
+      <section id="terminal-wrapper">
+        <div class="terminal-header">
+          <div class="terminal-tab">
+            <span id="status-dot" class="dot idle"></span>
+            <span class="tab-title">TERMINAL</span>
+          </div>
+          <span class="terminal-meta">PTY Live</span>
+        </div>
+        <div id="terminal-container"></div>
+      </section>
     </main>
+
+    <!-- Bottom Status Bar -->
+    <footer id="statusbar">
+      <div class="status-left">
+        <span class="status-item" id="editor-pos">Ln 1, Col 1</span>
+        <span class="status-item" id="status-lang">Python</span>
+      </div>
+      <div class="status-right">
+        <span class="status-item status-engine">Engine: Ready</span>
+      </div>
+    </footer>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
