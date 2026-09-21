@@ -1,5 +1,5 @@
-mod toolchain;
 mod runner;
+mod toolchain;
 
 use runner::AppState;
 
@@ -7,12 +7,13 @@ use runner::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState::default()) 
+        .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             toolchain::check_toolchains,
             runner::run_code,
             runner::pty_write,
-            runner::kill_process
+            runner::kill_process,
+            runner::pty_resize
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

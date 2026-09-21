@@ -1,4 +1,4 @@
-use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtyPair, PtySize};
 use serde::Deserialize;
 use std::fs;
 use std::io::{Read, Write};
@@ -10,6 +10,7 @@ use tempfile::Builder;
 
 #[derive(Default)]
 pub struct AppState {
+    pub pty_master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     pub pty_writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
     pub child_killer: Arc<Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>>,
 }
@@ -18,6 +19,23 @@ pub struct AppState {
 pub struct RunPayload {
     pub language: String,
     pub code: String,
+    pub rows: u16,
+    pub cols: u16,
+}
+
+#[tauri::command]
+pub fn pty_resize(rows: u16, cols: u16, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    if let Some(ref mut master) = *state.pty_master.lock().unwrap() {
+        master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -35,6 +53,7 @@ pub fn kill_process(state: tauri::State<'_, AppState>) -> Result<(), String> {
         let _ = child.kill();
     }
     *state.pty_writer.lock().unwrap() = None;
+    *state.pty_master.lock().unwrap() = None;
     Ok(())
 }
 
@@ -54,8 +73,8 @@ pub async fn run_code(
     let pty_system = native_pty_system();
     let pair: PtyPair = pty_system
         .openpty(PtySize {
-            rows: 24,
-            cols: 80,
+            rows: payload.rows.max(1),
+            cols: payload.cols.max(1),
             pixel_width: 0,
             pixel_height: 0,
         })
@@ -66,6 +85,7 @@ pub async fn run_code(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
     *state.pty_writer.lock().unwrap() = Some(writer);
+    *state.pty_master.lock().unwrap() = Some(pair.master);
 
     thread::spawn(move || {
         let mut buffer = [0u8; 1024];

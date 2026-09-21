@@ -107,7 +107,16 @@ function initializeTerminal(): { term: Terminal; fitAddon: FitAddon } {
   return { term, fitAddon };
 }
 
-function updateDimensions(fitAddon: FitAddon): void {
+function syncPtySize(term: Terminal): void {
+  if (term.rows > 0 && term.cols > 0) {
+    invoke("pty_resize", {
+      rows: term.rows,
+      cols: term.cols,
+    }).catch(() => {});
+  }
+}
+
+function updateDimensions(fitAddon: FitAddon, term?: Terminal): void {
   const { isTerminalVisible, isVertical, splitRatio } = layoutState;
   const { editorContainer, terminalContainer, divider } = elements;
 
@@ -134,7 +143,12 @@ function updateDimensions(fitAddon: FitAddon): void {
     terminalContainer.style.width = `${(1 - splitRatio) * 100}%`;
   }
 
-  requestAnimationFrame(() => fitAddon.fit());
+  requestAnimationFrame(() => {
+    fitAddon.fit();
+    if (term) {
+      syncPtySize(term);
+    }
+  });
 }
 
 function switchLanguage(editor: EditorView, targetLanguage: string): void {
@@ -175,7 +189,7 @@ async function executeCode(
 ): Promise<void> {
   if (!layoutState.isTerminalVisible) {
     layoutState.isTerminalVisible = true;
-    updateDimensions(fitAddon);
+    updateDimensions(fitAddon, term);
   }
 
   const code = editor.state.doc.toString();
@@ -187,7 +201,12 @@ async function executeCode(
 
   try {
     await invoke("run_code", {
-      payload: { language, code },
+      payload: {
+        language,
+        code,
+        rows: term.rows || 24,
+        cols: term.cols || 80,
+      },
     });
   } catch (err) {
     term.writeln(`\r\n\x1b[31m[Execution Error]: ${err}\x1b[0m\r\n`);
@@ -222,12 +241,12 @@ function bindEventListeners(
     elements.workspace.className = layoutState.isVertical
       ? "layout-vertical"
       : "layout-horizontal";
-    updateDimensions(fitAddon);
+    updateDimensions(fitAddon, term);
   });
 
   elements.btnToggleTerminal.addEventListener("click", () => {
     layoutState.isTerminalVisible = !layoutState.isTerminalVisible;
-    updateDimensions(fitAddon);
+    updateDimensions(fitAddon, term);
   });
 
   elements.btnRun.addEventListener("click", () => {
@@ -258,7 +277,7 @@ function bindEventListeners(
 
     if (ratio >= 0.15 && ratio <= 0.85) {
       layoutState.splitRatio = ratio;
-      updateDimensions(fitAddon);
+      updateDimensions(fitAddon, term);
     }
   });
 
@@ -268,10 +287,11 @@ function bindEventListeners(
     elements.divider.classList.remove("dragging");
     document.body.style.userSelect = "auto";
     fitAddon.fit();
+    syncPtySize(term);
   });
 
   window.addEventListener("resize", () => {
-    updateDimensions(fitAddon);
+    updateDimensions(fitAddon, term);
   });
 }
 
@@ -279,7 +299,7 @@ function bootstrap(): void {
   const editor = initializeEditor();
   const { term, fitAddon } = initializeTerminal();
 
-  updateDimensions(fitAddon);
+  updateDimensions(fitAddon, term);
   attachTerminalStreams(term);
   bindEventListeners(editor, term, fitAddon);
   verifyToolchains(term);
