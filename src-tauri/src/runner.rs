@@ -115,6 +115,8 @@ pub async fn run_code(
 
             let binary = if cfg!(target_os = "windows") { "python" } else { "python3" };
             let mut cmd = CommandBuilder::new(binary);
+            cmd.env_remove("PYTHONHOME");
+            cmd.env_remove("PYTHONPATH");
             cmd.arg("-u");
             cmd.arg(&file_path);
             cmd.cwd(&temp_path);
@@ -132,6 +134,7 @@ pub async fn run_code(
 
             let _ = app.emit("pty-output", "\r\n\x1b[33m[Compiling with GCC...]\x1b[0m\r\n");
             let compile = Command::new("gcc")
+                .env_remove("LD_LIBRARY_PATH")
                 .arg(&file_path)
                 .arg("-O2")
                 .arg("-o")
@@ -149,6 +152,7 @@ pub async fn run_code(
             }
 
             let mut cmd = CommandBuilder::new(&binary_out);
+            cmd.env_remove("LD_LIBRARY_PATH");
             cmd.cwd(&temp_path);
             cmd
         }
@@ -165,6 +169,7 @@ pub async fn run_code(
             fs::write(&file_path, &payload.code).map_err(|e| e.to_string())?;
 
             let mut cmd = CommandBuilder::new("java");
+            cmd.env_remove("LD_LIBRARY_PATH");
             cmd.arg(&file_name);
             cmd.cwd(&temp_path);
             cmd
